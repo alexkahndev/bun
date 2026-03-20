@@ -1453,7 +1453,7 @@ pub const ESModule = struct {
             if (specifier.len == 0) return null;
             var package = Package{ .name = parseName(specifier) orelse return null, .subpath = "" };
 
-            if (strings.startsWith(package.name, ".") or strings.indexAnyComptime(package.name, "\\%") != null)
+            if (strings.startsWith(package.name, ".") or strings.indexAnyComptime(package.name, "\\% <>\"'`!#$&|(){}[]") != null)
                 return null;
 
             const offset: usize = if (package.name.len == 0 or package.name[0] != '@') 0 else 1;
