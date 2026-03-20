@@ -1,4 +1,4 @@
-import { test, expect, describe } from "bun:test";
+import { describe, expect, test } from "bun:test";
 import { bunEnv, bunExe } from "harness";
 
 describe.each([
@@ -16,7 +16,7 @@ describe.each([
   "pkg[name]",
   "pkg|name",
   "pkg`name",
-])("require(%json)", (name) => {
+])("require(%json)", name => {
   test.concurrent("does not crash", async () => {
     await using proc = Bun.spawn({
       cmd: [bunExe(), "--no-install", "-e", `try { require(${JSON.stringify(name)}); } catch (e) {}`],
