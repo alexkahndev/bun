@@ -1871,12 +1871,18 @@ pub const Example = struct {
                     // matching Scope.fromAPI in npm.zig.
                     if (strings.startsWithChar(registry.url, '$')) {
                         if (env_loader.map.get(strings.trim(registry.url[1..], "/"))) |replaced_url| {
-                            if (replaced_url.len > 1) {
+                            if (replaced_url.len > 0 and
+                                (strings.startsWith(replaced_url, "https://") or
+                                    strings.startsWith(replaced_url, "http://")))
+                            {
                                 return replaced_url;
                             }
                         }
+                        // Env var not found or invalid — don't return the
+                        // literal "$VAR" placeholder; fall through to default.
+                    } else {
+                        return registry.url;
                     }
-                    return registry.url;
                 }
             }
         }

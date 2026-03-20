@@ -4,11 +4,21 @@ import { bunEnv, bunExe, tempDir } from "harness";
 // Test that `bun create` respects custom registry configuration
 // Issue: https://github.com/oven-sh/bun/issues/617
 
+// Stub server that returns 500 for all requests, proving bun create contacted it.
+function stubRegistry(): { server: ReturnType<typeof Bun.serve>; url: string } {
+  const server = Bun.serve({
+    port: 0,
+    fetch: () => new Response("stub registry", { status: 500 }),
+  });
+  return { server, url: `http://127.0.0.1:${server.port}` };
+}
+
 describe("bun create respects custom registry", () => {
   test(
     "BUN_CONFIG_REGISTRY environment variable",
     async () => {
-      const customRegistry = "http://127.0.0.1:12345";
+      await using server = stubRegistry().server;
+      const customRegistry = `http://127.0.0.1:${server.port}`;
 
       using dir = tempDir("bun-create-registry-env", {});
 
@@ -25,7 +35,7 @@ describe("bun create respects custom registry", () => {
 
       const [stdout, stderr, exitCode] = await Promise.all([proc.stdout.text(), proc.stderr.text(), proc.exited]);
 
-      // The command should fail because no server is running on 127.0.0.1:12345.
+      // Should fail because stub registry returns 500.
       // If bun ignored the env var and used npmjs.org, it would succeed.
       const output = (stdout + stderr).toLowerCase();
       expect(output).toContain("error");
@@ -37,7 +47,8 @@ describe("bun create respects custom registry", () => {
   test(
     "NPM_CONFIG_REGISTRY environment variable",
     async () => {
-      const customRegistry = "http://127.0.0.1:12346";
+      await using server = stubRegistry().server;
+      const customRegistry = `http://127.0.0.1:${server.port}`;
 
       using dir = tempDir("bun-create-npm-registry-env", {});
 
@@ -62,9 +73,38 @@ describe("bun create respects custom registry", () => {
   );
 
   test(
+    "npm_config_registry environment variable (lowercase)",
+    async () => {
+      await using server = stubRegistry().server;
+      const customRegistry = `http://127.0.0.1:${server.port}`;
+
+      using dir = tempDir("bun-create-npm-config-registry-lc", {});
+
+      await using proc = Bun.spawn({
+        cmd: [bunExe(), "create", "elysia", "my-app"],
+        cwd: String(dir),
+        env: {
+          ...bunEnv,
+          npm_config_registry: customRegistry,
+        },
+        stderr: "pipe",
+        stdout: "pipe",
+      });
+
+      const [stdout, stderr, exitCode] = await Promise.all([proc.stdout.text(), proc.stderr.text(), proc.exited]);
+
+      const output = (stdout + stderr).toLowerCase();
+      expect(output).toContain("error");
+      expect(exitCode).not.toBe(0);
+    },
+    { timeout: 30_000 },
+  );
+
+  test(
     "bunfig.toml registry configuration",
     async () => {
-      const customRegistry = "http://127.0.0.1:12347/";
+      await using server = stubRegistry().server;
+      const customRegistry = `http://127.0.0.1:${server.port}/`;
 
       using dir = tempDir("bun-create-bunfig-registry", {
         "bunfig.toml": ["[install]", `registry = "${customRegistry}"`, ""].join("\n"),
@@ -88,11 +128,43 @@ describe("bun create respects custom registry", () => {
   );
 
   test(
+    "bunfig.toml $ENV_VAR registry expansion",
+    async () => {
+      await using server = stubRegistry().server;
+      const customRegistry = `http://127.0.0.1:${server.port}`;
+
+      using dir = tempDir("bun-create-bunfig-env-expansion", {
+        "bunfig.toml": ["[install]", `registry = "$TEST_CUSTOM_REGISTRY"`, ""].join("\n"),
+      });
+
+      await using proc = Bun.spawn({
+        cmd: [bunExe(), "create", "elysia", "my-app"],
+        cwd: String(dir),
+        env: {
+          ...bunEnv,
+          TEST_CUSTOM_REGISTRY: customRegistry,
+        },
+        stderr: "pipe",
+        stdout: "pipe",
+      });
+
+      const [stdout, stderr, exitCode] = await Promise.all([proc.stdout.text(), proc.stderr.text(), proc.exited]);
+
+      // Should fail because the $ENV_VAR-expanded registry returns 500
+      const output = (stdout + stderr).toLowerCase();
+      expect(output).toContain("error");
+      expect(exitCode).not.toBe(0);
+    },
+    { timeout: 30_000 },
+  );
+
+  test(
     "BUN_CONFIG_REGISTRY overrides bunfig.toml registry",
     async () => {
-      // env var points to unreachable host; bunfig points to default registry.
+      // env var points to stub registry (500); bunfig points to default registry.
       // If priority is correct (env > bunfig), the command should fail.
-      const envRegistry = "http://127.0.0.1:12348";
+      await using server = stubRegistry().server;
+      const envRegistry = `http://127.0.0.1:${server.port}`;
 
       using dir = tempDir("bun-create-env-overrides-bunfig", {
         "bunfig.toml": ["[install]", `registry = "https://registry.npmjs.org/"`, ""].join("\n"),
@@ -111,7 +183,7 @@ describe("bun create respects custom registry", () => {
 
       const [stdout, stderr, exitCode] = await Promise.all([proc.stdout.text(), proc.stderr.text(), proc.exited]);
 
-      // Should fail because env var registry (unreachable) takes priority over bunfig (npmjs.org)
+      // Should fail because env var registry (stub 500) takes priority over bunfig (npmjs.org)
       const output = (stdout + stderr).toLowerCase();
       expect(output).toContain("error");
       expect(exitCode).not.toBe(0);
