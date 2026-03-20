@@ -1842,18 +1842,10 @@ pub const Example = struct {
     var url: URL = undefined;
 
     /// Gets the registry URL from configuration, environment variables, or falls back to default.
-    /// Priority: bunfig.toml > BUN_CONFIG_REGISTRY > NPM_CONFIG_REGISTRY > npm_config_registry > default
+    /// Priority matches `bun install` (PackageManagerOptions.zig):
+    ///   env vars (BUN_CONFIG_REGISTRY > NPM_CONFIG_REGISTRY > npm_config_registry) > bunfig.toml > default
     fn getRegistryUrl(ctx: Command.Context, env_loader: *DotEnv.Loader) string {
-        // First check bunfig configuration
-        if (ctx.install) |install| {
-            if (install.default_registry) |registry| {
-                if (registry.url.len > 0) {
-                    return registry.url;
-                }
-            }
-        }
-
-        // Then check environment variables
+        // Environment variables override bunfig, matching PackageManagerOptions behavior.
         const registry_keys = [_]string{
             "BUN_CONFIG_REGISTRY",
             "NPM_CONFIG_REGISTRY",
@@ -1867,6 +1859,24 @@ pub const Example = struct {
                         strings.startsWith(registry_url, "http://")))
                 {
                     return registry_url;
+                }
+            }
+        }
+
+        // Then check bunfig configuration.
+        if (ctx.install) |install| {
+            if (install.default_registry) |registry| {
+                if (registry.url.len > 0) {
+                    // Expand $ENV_VAR syntax in bunfig registry URLs,
+                    // matching Scope.fromAPI in npm.zig.
+                    if (strings.startsWithChar(registry.url, '$')) {
+                        if (env_loader.map.get(strings.trim(registry.url[1..], "/"))) |replaced_url| {
+                            if (replaced_url.len > 1) {
+                                return replaced_url;
+                            }
+                        }
+                    }
+                    return registry.url;
                 }
             }
         }
@@ -2228,7 +2238,7 @@ pub const Example = struct {
         var url_buf: [1024]u8 = undefined;
         const registry_url = getRegistryUrl(ctx, env_loader);
         const registry_without_trailing_slash = strings.withoutTrailingSlash(registry_url);
-        url = URL.parse(std.fmt.bufPrint(&url_buf, "{s}/bun-examples-all/latest", .{registry_without_trailing_slash}) catch unreachable);
+        url = URL.parse(try std.fmt.bufPrint(&url_buf, "{s}/bun-examples-all/latest", .{registry_without_trailing_slash}));
 
         const http_proxy: ?URL = env_loader.getHttpProxyFor(url);
 

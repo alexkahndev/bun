@@ -88,6 +88,38 @@ describe("bun create respects custom registry", () => {
   );
 
   test(
+    "BUN_CONFIG_REGISTRY overrides bunfig.toml registry",
+    async () => {
+      // env var points to unreachable host; bunfig points to default registry.
+      // If priority is correct (env > bunfig), the command should fail.
+      const envRegistry = "http://127.0.0.1:12348";
+
+      using dir = tempDir("bun-create-env-overrides-bunfig", {
+        "bunfig.toml": ["[install]", `registry = "https://registry.npmjs.org/"`, ""].join("\n"),
+      });
+
+      await using proc = Bun.spawn({
+        cmd: [bunExe(), "create", "elysia", "my-app"],
+        cwd: String(dir),
+        env: {
+          ...bunEnv,
+          BUN_CONFIG_REGISTRY: envRegistry,
+        },
+        stderr: "pipe",
+        stdout: "pipe",
+      });
+
+      const [stdout, stderr, exitCode] = await Promise.all([proc.stdout.text(), proc.stderr.text(), proc.exited]);
+
+      // Should fail because env var registry (unreachable) takes priority over bunfig (npmjs.org)
+      const output = (stdout + stderr).toLowerCase();
+      expect(output).toContain("error");
+      expect(exitCode).not.toBe(0);
+    },
+    { timeout: 30_000 },
+  );
+
+  test(
     "default registry works when no custom registry is set",
     async () => {
       using dir = tempDir("bun-create-default-registry", {});
@@ -103,7 +135,8 @@ describe("bun create respects custom registry", () => {
       const [stdout, stderr, exitCode] = await Promise.all([proc.stdout.text(), proc.stderr.text(), proc.exited]);
 
       // The command should succeed with the default registry
-      expect(stderr).not.toContain("error");
+      const output = (stdout + stderr).toLowerCase();
+      expect(output).not.toContain("error");
       expect(exitCode).toBe(0);
     },
     { timeout: 60_000 },
