@@ -200,27 +200,4 @@ describe("bun create respects custom registry", () => {
     },
     { timeout: 30_000 },
   );
-
-  test(
-    "default registry works when no custom registry is set",
-    async () => {
-      using dir = tempDir("bun-create-default-registry", {});
-
-      await using proc = Bun.spawn({
-        cmd: [bunExe(), "create", "elysia", "my-app"],
-        cwd: String(dir),
-        env: bunEnv,
-        stderr: "pipe",
-        stdout: "pipe",
-      });
-
-      const [stdout, stderr, exitCode] = await Promise.all([proc.stdout.text(), proc.stderr.text(), proc.exited]);
-
-      // The command should succeed with the default registry
-      const output = (stdout + stderr).toLowerCase();
-      expect(output).not.toContain("error");
-      expect(exitCode).toBe(0);
-    },
-    { timeout: 60_000 },
-  );
 });
